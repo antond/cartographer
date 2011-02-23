@@ -114,7 +114,7 @@ class Cartographer::Gmap
 
     html << "// define the map-initializing function for the onload event" if @debug
     html << "function initialize_gmap_#{@dom_id}() {
-#{@dom_id} = new google.maps.Map(document.getElementById(\"#{@dom_id}\"),{center: new google.maps.LatLng(0, 0), zoom: 0, scrollWheel: #{@scroll}, mapTypeId: google.maps.MapTypeId.#{@type}});"
+#{@dom_id} = new google.maps.Map(document.getElementById(\"#{@dom_id}\"),{center: new google.maps.LatLng(0, 0), zoom: 0, scrollwheel: #{@scroll}, mapTypeId: google.maps.MapTypeId.#{@type}});"
 
     html << "  #{@dom_id}.draggable = false;" if @draggable == false
     
