@@ -23,7 +23,9 @@ describe Cartographer::Gmarker do
 
   it "should accept valid Gmarker configuration for producing v3 marker object" do
 
-    marker = Cartographer::Gmarker.new(:name=> "org11", :marker_type => "Organization",
+    marker = Cartographer::Gmarker.new(
+              :name=> "org11",
+              :marker_type => "Organization",
               :position => [ 36.031332, -21.093750],
               :info_window_url => "/some_url",
               :icon => @icon,

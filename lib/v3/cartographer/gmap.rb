@@ -13,6 +13,7 @@
 # +icons+::     A collection of <tt>Cartographer::Gicon</tt> objects to be added to the map.
 # +markers+::   A collection of <tt>Cartographer::Gmarker</tt> objects to be added to the map.
 # +polylines+:: A collection of <tt>Cartographer::GpolyLine</tt> objects to be added to the map.
+# +ad+::        A <tt>Cartographer::Gad</tt> object to be added to the map.
 #
 # ==== Control types
 #
@@ -23,12 +24,10 @@
 # +overview+:: A small, collapsible overview map, shown in the lower-right
 # +scale+::    Scale of current map/zoom level, shown in the lower-left
 class Cartographer::Gmap
-  
+
   attr_accessor :dom_id, :draggable, :polylines,:type, :controls,
-  :markers, :center, :zoom, :scroll, :icons, :debug, :marker_mgr, :current_marker, :marker_clusterer, :shared_info_window, :marker_clusterer_icons,
+  :markers, :ad, :center, :zoom, :scroll, :icons, :debug, :marker_mgr, :current_marker, :marker_clusterer, :shared_info_window, :marker_clusterer_icons,
   :type
-
-
 
   @@window_onload = ""
 
@@ -55,12 +54,13 @@ class Cartographer::Gmap
     @zoom      = opts[:zoom] || 1
     @scroll    = opts[:scroll] || true
     @type      = opts[:type] || "ROADMAP"
-    
+
     @debug = opts[:debug]
-    
+
     @markers = []
     @polylines = []
     @icons = []
+    @ad = []
 
     @move_delay = 2000
 
@@ -73,9 +73,9 @@ class Cartographer::Gmap
 
     yield self if block_given?
   end
-  
+
   # Generates the HTML used to display the map. Set
-  # :include_onload to false if you don't want the map 
+  # :include_onload to false if you don't want the map
   # loaded in the window.onload function (for example, if
   # you're generating it after an Ajax call).
   #
@@ -87,20 +87,20 @@ class Cartographer::Gmap
     html = []
     # setup the JS header
     html << "<!-- initialize the google map and your markers -->" if @debug
-    html << "<script type=\"text/javascript\">\n/* <![CDATA[ */\n"  
+    html << "<script type=\"text/javascript\">\n/* <![CDATA[ */\n"
     html << to_js(opts[:include_onload])
     html << "/* ]]> */</script> "
     html << "<!-- end of cartographer code -->" if @debug
     return @debug ? html.join("\n") : html.join.gsub(/\s+/, ' ')
   end
-  
+
   # Generates the JavaScript used to display the map.
   def to_js(include_onload = true)
     html = []
     html << "// define the map-holding variable so we can use it from outside the onload event" if @debug
     html << "var #{@dom_id};\n"
     html << "// define the marker variables for your map so they can be accessed from outside the onload event" if @debug
-    @markers.collect do |m| 
+    @markers.collect do |m|
       html << "var #{m.name};" unless m.info_window_url
       html << m.header_js
     end
@@ -114,10 +114,10 @@ class Cartographer::Gmap
 
     html << "// define the map-initializing function for the onload event" if @debug
     html << "function initialize_gmap_#{@dom_id}() {
-#{@dom_id} = new google.maps.Map(document.getElementById(\"#{@dom_id}\"),{center: new google.maps.LatLng(0, 0), zoom: 0, scrollwheel: #{@scroll}, mapTypeId: google.maps.MapTypeId.#{@type}});"
+#{@dom_id} = new google.maps.Map(document.getElementById(\"#{@dom_id}\"),{center: new google.maps.LatLng(0, 0), zoom: 0, scrollWheel: #{@scroll}, mapTypeId: google.maps.MapTypeId.#{@type}});"
 
     html << "  #{@dom_id}.draggable = false;" if @draggable == false
-    
+
     if( @zoom == :bound )
       sw_ne = self.bounding_points
       html << "#{@dom_id}.setCenter(new google.maps.LatLng(0,0),0);\n"
@@ -128,30 +128,38 @@ class Cartographer::Gmap
       html << "#{@dom_id}.setCenter(new google.maps.LatLng(#{@center[0]}, #{@center[1]}));#{@dom_id}.setZoom(#{@zoom});\n"
     end
 
-    html << "  // set the default map type" if @debug 
+    html << "  // set the default map type" if @debug
     html << "  #{@dom_id}.setMapTypeId(google.maps.MapTypeId.#{@type.to_s.upcase});\n"
 
-
+    # setup markers
     html << "\n  // create markers from the @markers array" if @debug
-    html << "\n setupMarkers();"   
+    html << "\n setupMarkers();"
+    html << "\n setupAds();"
 
     # trigger marker info window is current_marker is defined
     (html << "google.maps.event.trigger(#{@current_marker}, \"click\");\n") unless @current_marker.nil?
 
     html << "  // create polylines from the @polylines array" if @debug
     @polylines.each { |pl| html << pl.to_js }
-    
+
+
     # ending the gmap_#{name} function
     html << "}\n"
-    
+
+    # Setup AdSense ad function
+    html << "function setupAds(){"
+    html << "\n #{@ad.to_js}" if @ad != []
+    html << "}\n"
+
+    # Setup markers function
     html << "function setupMarkers(){"
-    
+
     # Render the Icons
     html << "  // create icons from the @icons array" if @debug
     @icons.each { |i| html << i.to_js }
-  
+
     html << "mgr = new MarkerManager(#{@dom_id});" if @marker_mgr
-    hmarkers = Hash.new 
+    hmarkers = Hash.new
     hmarkers_no_zoom =[]
     @markers.each do |m|
       if (m.min_zoom.nil?) || (m.min_zoom == '')
@@ -160,20 +168,20 @@ class Cartographer::Gmap
         hmarkers[m.min_zoom] = [] unless hmarkers[m.min_zoom]
         hmarkers[m.min_zoom] << m
       end
-    end   
+    end
     add_marker_js = ""
     hmarkers.each do |zoom, markers|
       html << "var batch#{zoom} = [];"
       markers.each do |m|
         html << m.to_js(@marker_mgr, @marker_clusterer)
         html << "batch#{zoom}.push(#{m.name});"
-      end      
+      end
       add_marker_js << "mgr.addMarkers(batch#{zoom}, #{zoom});"
     end
-    
+
     if (hmarkers_no_zoom.size > 0)
       html << "var batch = [];"
-      hmarkers_no_zoom.each do |m|      
+      hmarkers_no_zoom.each do |m|
         html << m.to_js(@marker_mgr, @marker_clusterer)
         html << "batch.push(#{m.name});" if @marker_mgr
       end
@@ -211,7 +219,7 @@ class Cartographer::Gmap
     });" if @debug
 
     html << "}" #End of setup marker method
-        
+
     html << "  // Dynamically attach to the window.onload event while still allowing for your existing onload events." if @debug
 
     # todo: allow for onload to happen before, or after, the existing onload events, like :before or :after
@@ -220,68 +228,68 @@ class Cartographer::Gmap
       @@window_onload << "gmap_#{@dom_id}();\n"
 
       html << "
-if (typeof window.onload != 'function')
-  window.onload = initialize_gmap_#{@dom_id};
+if (typeof window.onload !== 'function') {
+  window.onload = initialize_gmap_#{@dom_id}; }
 else {
   old_before_cartographer_#{@dom_id} = window.onload;
-  window.onload = function() { 
-    old_before_cartographer_#{@dom_id}(); 
-    initialize_gmap_#{@dom_id}(); 
-  }
-}"      
+  window.onload = function() {
+    old_before_cartographer_#{@dom_id}();
+    initialize_gmap_#{@dom_id}();
+  };
+}"
     else #include_onload == false
       html << "initialize_gmap_#{@dom_id}();"
     end
     return @debug ? html.join("\n") : html.join.gsub(/\s+/, ' ')
   end
-  
+
   # Doesn't get called anywhere and the js method it calls doesn't seem to exist.  Is this used?
   def follow_route_link(link_text = 'Follow route', options = {})#:nodoc:
     anchor = '#' + (options[:anchor].to_s || '')
     move_delay = (options[:delay] || @move_delay)
     "<a href='#{anchor}' onclick='follow_gmap_route_#{@dom_id}_function(#{move_delay}); return false;'>#{link_text}</a>"
-  end    
+  end
 
   # Shortcut for <tt>#to_html(true)</tt>
   def to_s
     self.to_html
   end
-  
+
   # Returns the coordinates of the center of the bounding box that contains all of the map's markers.
   def auto_center
-  	return [45,0] unless @markers
+    return [45,0] unless @markers
       return @markers.first.position if @markers.length == 1
-  	maxlat, minlat, maxlon, minlon = Float::MIN, Float::MAX, Float::MIN, Float::MAX
-  	@markers.each do |marker| 
-  		if marker.lat > maxlat then maxlat = marker.lat end
-  		if marker.lat < minlat then minlat = marker.lat end
-  		if marker.lon > maxlon then maxlon = marker.lon end 
-  		if marker.lon < minlon then minlon = marker.lon end
-  	end
-  	return [((maxlat+minlat)/2), ((maxlon+minlon)/2)]
+    maxlat, minlat, maxlon, minlon = Float::MIN, Float::MAX, Float::MIN, Float::MAX
+    @markers.each do |marker|
+      if marker.lat > maxlat then maxlat = marker.lat end
+      if marker.lat < minlat then minlat = marker.lat end
+      if marker.lon > maxlon then maxlon = marker.lon end
+      if marker.lon < minlon then minlon = marker.lon end
+    end
+    return [((maxlat+minlat)/2), ((maxlon+minlon)/2)]
   end
-  
+
   def bounding_points
-  
+
     maxlat, minlat, maxlon, minlon = nil, nil, nil, nil
-  
-    @markers.each do |marker| 
-  		if ! maxlat || marker.lat > maxlat then maxlat = marker.lat end
-  		if ! minlat || marker.lat < minlat then minlat = marker.lat end
-  		if ! maxlon || marker.lon > maxlon then maxlon = marker.lon end 
-  		if ! minlon || marker.lon < minlon then minlon = marker.lon end
-  	end
-  
-    @polylines.each do |line|
-      line.points.each do |point|
-  		if ! maxlat || point[0] > maxlat then maxlat = point[0] end
-  		if ! minlat || point[0] < minlat then minlat = point[0] end
-  		if ! maxlon || point[1] > maxlon then maxlon = point[1] end 
-  		if ! minlon || point[1] < minlon then minlon = point[1] end
-  	  end
+
+    @markers.each do |marker|
+      if ! maxlat || marker.lat > maxlat then maxlat = marker.lat end
+      if ! minlat || marker.lat < minlat then minlat = marker.lat end
+      if ! maxlon || marker.lon > maxlon then maxlon = marker.lon end
+      if ! minlon || marker.lon < minlon then minlon = marker.lon end
     end
 
-  	return [[minlat, minlon], [maxlat, maxlon]]
+    @polylines.each do |line|
+      line.points.each do |point|
+      if ! maxlat || point[0] > maxlat then maxlat = point[0] end
+      if ! minlat || point[0] < minlat then minlat = point[0] end
+      if ! maxlon || point[1] > maxlon then maxlon = point[1] end
+      if ! minlon || point[1] < minlon then minlon = point[1] end
+      end
+    end
+
+    return [[minlat, minlon], [maxlat, maxlon]]
   end
   def cartographer_ajax_fetch_url
     "function cartographer_ajax_fetch_url(url){
@@ -301,3 +309,4 @@ else {
   end
 
 end
+
